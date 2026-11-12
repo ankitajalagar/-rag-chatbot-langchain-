@@ -20,10 +20,12 @@ def get_llm():
 
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            raise ValueError("GROQ_API_KEY is not set in your .env file.")
+            raise ValueError(
+                "GROQ_API_KEY is not configured in Streamlit secrets or the environment."
+            )
         return ChatGroq(
             api_key=api_key,
-            model=os.getenv("GROQ_MODEL", "llama-3.1-8b-instant"),
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
             temperature=0.2,
         )
 
@@ -32,7 +34,9 @@ def get_llm():
 
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("OPENAI_API_KEY is not set in your .env file.")
+            raise ValueError(
+                "OPENAI_API_KEY is not configured in Streamlit secrets or the environment."
+            )
         return ChatOpenAI(
             api_key=api_key,
             model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
@@ -44,7 +48,9 @@ def get_llm():
 
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
-            raise ValueError("GOOGLE_API_KEY is not set in your .env file.")
+            raise ValueError(
+                "GOOGLE_API_KEY is not configured in Streamlit secrets or the environment."
+            )
         return ChatGoogleGenerativeAI(
             google_api_key=api_key,
             model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),

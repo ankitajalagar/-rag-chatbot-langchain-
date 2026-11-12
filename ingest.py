@@ -17,6 +17,7 @@ import argparse
 import os
 import shutil
 
+from chromadb.config import Settings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -65,8 +66,11 @@ def store_in_chroma(chunks, embeddings, persist_dir: str = CHROMA_DIR):
         embedding=embeddings,
         persist_directory=persist_dir,
         collection_name="rag_chatbot_collection",
+        client_settings=Settings(
+            is_persistent=True,
+            anonymized_telemetry=False,
+        ),
     )
-    vectordb.persist()
     print(f"[4/4] Stored {len(chunks)} embedded chunk(s) in ChromaDB at '{persist_dir}/'.")
     return vectordb
 

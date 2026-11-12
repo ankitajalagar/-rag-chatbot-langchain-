@@ -1,146 +1,135 @@
+# AI-Powered PDF Question Answering System
 
-# Simple RAG Chatbot (LangChain + ChromaDB)
+A Streamlit application that lets you upload a PDF and ask questions grounded
+in its contents. It uses the existing LangChain retrieval-augmented generation
+(RAG) pipeline and can also be run as the original terminal chatbot.
 
-## Project Overview
+## Architecture and workflow
 
-This project is a **Retrieval-Augmented Generation (RAG) chatbot** that answers
-user questions based on the contents of a PDF document.
+1. `app.py` accepts a PDF upload and saves it to a temporary workspace.
+2. `ingest.py` loads pages with `PyPDFLoader`, splits them into overlapping
+   1,000-character chunks, embeds them with
+   `sentence-transformers/all-MiniLM-L6-v2`, and indexes them in ChromaDB.
+3. `chatbot.py` retrieves the four most relevant chunks and uses a LangChain
+   `RetrievalQA` chain to generate an answer from that context. The prompt tells
+   the model to say when the answer is not in the retrieved content.
+4. The UI displays the answer and, when returned by the chain, the retrieved
+   passages with their PDF page numbers.
 
-Pipeline:
-1. Load a PDF document (`PyPDFLoader`).
-2. Split it into meaningful, overlapping chunks (`RecursiveCharacterTextSplitter`).
-3. Generate embeddings for each chunk using **Sentence Transformers**
-   (`all-MiniLM-L6-v2`).
-4. Store the embeddings in a persistent **ChromaDB** vector database.
-5. Accept a question from the user.
-6. Retrieve the most relevant chunks from ChromaDB via similarity search.
-7. Pass the retrieved context + question to an **LLM** (Groq, OpenAI, Gemini,
-   or Ollama — configurable) to generate an answer.
-8. Return an accurate, context-grounded response, along with the source
-   page numbers it was drawn from.
+Each browser session gets its own temporary PDF and vector-store directory so
+uploads do not overwrite the CLI's `chroma_db/` or another session's index.
+Temporary files are removed when the user clears or replaces the processed
+document. Streamlit Community Cloud has ephemeral storage; uploaded PDFs and
+indexes are not retained across app restarts. Chroma anonymized telemetry is
+disabled by default for the ingestion and retrieval clients.
 
-## Tech Stack
+## Technologies
 
-| Component        | Tool                                  |
-|-------------------|----------------------------------------|
-| Language          | Python 3.10+                          |
-| Orchestration     | LangChain                             |
-| Vector database   | ChromaDB (persisted locally)          |
-| Embeddings        | Sentence Transformers `all-MiniLM-L6-v2` |
-| LLM               | Groq / OpenAI / Gemini / Ollama (pick one) |
-| PDF loading       | pypdf                                 |
+- Python 3.11 (recommended for local use and selected for deployment)
+- Streamlit
+- LangChain and LangChain Community
+- ChromaDB
+- Sentence Transformers (`all-MiniLM-L6-v2`)
+- PyPDF
+- Groq, OpenAI, Google Gemini, or Ollama via `llm_factory.py`
 
-## Project Structure
+The default provider is Groq with `openai/gpt-oss-20b`. Provider and model
+can be selected using environment variables.
 
+## Local setup
+
+1. Create and activate a Python 3.11 virtual environment:
+
+   ```bash
+   python -m venv .venv
+   # Windows PowerShell
+   .venv\Scripts\Activate.ps1
+   # macOS/Linux
+   source .venv/bin/activate
+   ```
+
+2. Install dependencies:
+
+   ```bash
+   python -m pip install -r requirements.txt
+   ```
+
+3. Configure the chosen LLM provider (see below). For Groq, for example:
+
+   ```powershell
+   # Windows PowerShell; use your own key, and do not commit it.
+   $env:GROQ_API_KEY = "your-groq-api-key"
+   ```
+
+   ```bash
+   # macOS/Linux; use your own key, and do not commit it.
+   export GROQ_API_KEY="your-groq-api-key"
+   ```
+
+4. Start the web app:
+
+   ```bash
+   streamlit run app.py
+   ```
+
+The first ingestion downloads the embedding model from Hugging Face and
+requires network access. The existing command-line workflow is still
+available: place a PDF at `data/source.pdf`, run
+`python ingest.py --pdf data/source.pdf`, then `python chatbot.py`.
+
+## LLM configuration
+
+`LLM_PROVIDER` selects the backend. It defaults to `groq`. Add the key matching
+your provider and optionally override its model:
+
+| Provider | Required key | Optional model setting | Default model |
+|---|---|---|---|
+| `groq` | `GROQ_API_KEY` | `GROQ_MODEL` | `openai/gpt-oss-20b` |
+| `openai` | `OPENAI_API_KEY` | `OPENAI_MODEL` | `gpt-4o-mini` |
+| `gemini` | `GOOGLE_API_KEY` | `GEMINI_MODEL` | `gemini-1.5-flash` |
+| `ollama` | None | `OLLAMA_MODEL`, `OLLAMA_BASE_URL` | `llama3`, `http://localhost:11434` |
+
+For Ollama, the Ollama service and selected model must be reachable from the
+machine running the app. A local Ollama installation is generally not available
+to a hosted Streamlit Community Cloud app.
+
+### Streamlit secrets
+
+For a local secrets file, create `.streamlit/secrets.toml` (keep it out of
+version control):
+
+```toml
+LLM_PROVIDER = "groq"
+GROQ_API_KEY = "your-groq-api-key"
+# GROQ_MODEL = "openai/gpt-oss-20b"
 ```
-rag_chatbot/
-├── data/                # Put your source PDF here
-├── ingest.py            # Steps 1-4: load PDF -> chunk -> embed -> store in ChromaDB
-├── chatbot.py           # Steps 5-8: ask -> retrieve -> LLM answer -> return
-├── llm_factory.py        # Picks the LLM provider based on .env
-├── requirements.txt
-├── .env.example
-└── README.md
-```
 
-(After you run `ingest.py`, a `chroma_db/` folder will also be created — this
-is your persisted vector store.)
+In Streamlit Community Cloud, add the same settings in the app's **Settings →
+Secrets**. Environment variables are also supported; existing environment
+values take precedence over Streamlit secrets. Never place real keys in source
+code, README files, or a public repository.
 
-## Installation Steps
+## Deploy to Streamlit Community Cloud
 
-1. **Clone the repository** (or unzip the project folder) and move into it:
-   ```bash
-   git clone <your-repo-url>
-   cd rag_chatbot
-   ```
+1. Push the project to a GitHub repository you control.
+2. In Streamlit Community Cloud, create an app from that repository and select
+   `app.py` as the entry point.
+3. Select Python 3.11 in the app's advanced settings.
+4. Add `LLM_PROVIDER` and the matching provider API key under the app's
+   **Settings → Secrets**.
+5. Deploy. The app installs dependencies from `requirements.txt`; the
+   embedding model is downloaded when the first PDF is processed.
 
-2. **Create and activate a virtual environment** (recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate      # macOS/Linux
-   venv\Scripts\activate         # Windows
-   ```
+The app does not require a repository-local PDF or a prebuilt Chroma directory.
+Cloud storage is ephemeral, so users need to upload and process a PDF again
+after a restart.
 
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-   > Note: `requirements.txt` includes packages for all four LLM providers.
-   > If you only plan to use one (e.g. Groq), you can safely remove the
-   > other providers' lines to speed up installation.
+## Notes and limitations
 
-## Required Dependencies
-
-- `langchain`, `langchain-community`, `langchain-text-splitters`
-- `chromadb`
-- `sentence-transformers`
-- `pypdf`
-- `python-dotenv`
-- One of: `langchain-groq`, `langchain-openai`, `langchain-google-genai`, `langchain-ollama`
-
-## Environment Variables
-
-Copy the example file and fill in your own values:
-
-```bash
-cp .env.example .env
-```
-
-| Variable          | Description                                              |
-|--------------------|------------------------------------------------------------|
-| `LLM_PROVIDER`     | One of `groq`, `openai`, `gemini`, `ollama`                |
-| `GROQ_API_KEY`     | Required if `LLM_PROVIDER=groq` — get one at https://console.groq.com |
-| `OPENAI_API_KEY`   | Required if `LLM_PROVIDER=openai`                          |
-| `GOOGLE_API_KEY`   | Required if `LLM_PROVIDER=gemini`                          |
-| `OLLAMA_MODEL` / `OLLAMA_BASE_URL` | Used if `LLM_PROVIDER=ollama` (no API key needed, but Ollama must be running locally) |
-
-## Instructions to Run the Application
-
-1. **Add your PDF** to the `data/` folder (or point to any path), e.g.
-   `data/source.pdf`.
-
-2. **Ingest the PDF** — this loads, chunks, embeds, and stores it in ChromaDB:
-   ```bash
-   python ingest.py --pdf data/source.pdf
-   ```
-   You should see output confirming each of the 4 steps (load → split →
-   embed → store).
-
-3. **Run the chatbot:**
-   ```bash
-   python chatbot.py
-   ```
-
-4. **Ask questions** about the PDF directly in the terminal:
-   ```
-   You: What is this document about?
-   Bot: ...
-   (Sources: page(s) [1, 2] of the PDF)
-   ```
-
-5. Type `exit` or `quit` to stop the chatbot.
-
-## How It Satisfies the Assignment Requirements
-
-| Requirement                          | Where it's implemented                     |
-|---------------------------------------|----------------------------------------------|
-| Load a PDF document                   | `ingest.py` → `load_pdf()`                   |
-| Split into meaningful chunks          | `ingest.py` → `split_documents()`            |
-| Generate embeddings                   | `ingest.py` → `build_embeddings()` (all-MiniLM-L6-v2) |
-| Store embeddings in ChromaDB          | `ingest.py` → `store_in_chroma()`            |
-| Accept questions from the user        | `chatbot.py` → `main()` input loop           |
-| Retrieve relevant chunks              | `chatbot.py` → `retriever` (top-4 similarity search) |
-| Use an LLM to generate answers        | `llm_factory.py` + `RetrievalQA` chain in `chatbot.py` |
-| Return accurate, relevant responses   | Prompt template restricts the LLM to the retrieved context |
-
-## Notes / Troubleshooting
-
-- If `ingest.py` fails with a "PDF not found" error, double-check the `--pdf`
-  path.
-- If `chatbot.py` fails with a missing API key error, confirm your `.env`
-  file is filled in and matches your chosen `LLM_PROVIDER`.
-- The first run will download the `all-MiniLM-L6-v2` embedding model
-  (~90MB) from Hugging Face — this requires an internet connection once.
-- For Ollama, make sure the Ollama app/service is running locally
-  (`ollama serve`) and the model is pulled (`ollama pull llama3`) before
-  running `chatbot.py`.
+- Answers depend on the uploaded document, retrieved chunks, and configured
+  model; the app does not guarantee factual accuracy.
+- Scanned/image-only PDFs may not provide extractable text because the current
+  loader workflow does not perform OCR.
+- The CLI's `ingest.py` still rebuilds the default local `chroma_db/` when run.
+- Local model downloads and indexing require enough available memory and disk
+  space for the PDF, embedding model, and ChromaDB.

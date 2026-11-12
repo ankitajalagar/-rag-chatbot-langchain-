@@ -15,6 +15,7 @@ Requires ingest.py to have been run first (creates the chroma_db/ folder).
 
 import os
 
+from chromadb.config import Settings
 from dotenv import load_dotenv
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
@@ -41,22 +42,29 @@ Answer clearly and concisely, citing the relevant part of the context where usef
 """
 
 
-def load_vectorstore():
-    if not os.path.exists(CHROMA_DIR):
+def load_vectorstore(persist_dir: str = CHROMA_DIR, embeddings=None):
+    if not os.path.exists(persist_dir):
         raise FileNotFoundError(
-            f"No ChromaDB found at '{CHROMA_DIR}/'. Run `python ingest.py --pdf <path>` first."
+            f"No ChromaDB found at '{persist_dir}/'. Run `python ingest.py --pdf <path>` first."
         )
-    embeddings = HuggingFaceEmbeddings(model_name=f"sentence-transformers/{EMBED_MODEL_NAME}")
+    if embeddings is None:
+        embeddings = HuggingFaceEmbeddings(
+            model_name=f"sentence-transformers/{EMBED_MODEL_NAME}"
+        )
     vectordb = Chroma(
-        persist_directory=CHROMA_DIR,
+        persist_directory=persist_dir,
         embedding_function=embeddings,
         collection_name="rag_chatbot_collection",
+        client_settings=Settings(
+            is_persistent=True,
+            anonymized_telemetry=False,
+        ),
     )
     return vectordb
 
 
-def build_qa_chain():
-    vectordb = load_vectorstore()
+def build_qa_chain(persist_dir: str = CHROMA_DIR, embeddings=None):
+    vectordb = load_vectorstore(persist_dir, embeddings)
     retriever = vectordb.as_retriever(search_kwargs={"k": 4})  # Step 6: top-4 relevant chunks
 
     llm = get_llm()  # Step 7: chosen LLM (Groq/OpenAI/Gemini/Ollama)
@@ -74,6 +82,11 @@ def build_qa_chain():
         chain_type_kwargs={"prompt": prompt},
     )
     return qa_chain
+
+
+def close_vectorstore(vectordb: Chroma):
+    # Stop Chroma's per-directory system to release HNSW file handles before temp cleanup.
+    vectordb._client._system.stop()
 
 
 def main():
